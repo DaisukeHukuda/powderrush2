@@ -89,7 +89,8 @@
     <div><b>← → / A D</b>ターン（空中でスピン）</div>
     <div><b>↑ ↓ / W S</b>タック・ブレーキ（空中でフリップ）</div>
     <div><b>SPACE 長押し→離す</b>ジャンプ</div>
-    <div><b>SHIFT</b>グラブ（空中）　<b>R</b>リスタート</div>
+    <div><b>SHIFT+方向</b>グラブ5種（空中）　<b>R</b>リスタート</div>
+    <div><b>レール</b>ジャンプで飛び乗り→SPACEで降りる</div>
   </div>
 </div>
 <div id="vignette"></div>
@@ -103,7 +104,8 @@
     <div><b>← → / A D</b>ターン（空中でスピン）</div>
     <div><b>↑ / W</b>タック加速　<b>↓ / S</b>ブレーキ</div>
     <div><b>SPACE 長押し→離す</b>ジャンプ（溜めるほど高く）</div>
-    <div><b>SHIFT</b>空中でグラブ　/　キッカー（青い台）で大ジャンプ！</div>
+    <div><b>SHIFT（+方向キー）</b>グラブ5種：INDY / NOSE / TAIL / MELON / STALEFISH</div>
+    <div><b>テーブルトップ（青い台）</b>で大ジャンプ　/　<b>レール</b>に飛び乗って50-50グラインド！</div>
   </div>
 </div>
 <div id="loaderr">3Dライブラリ（three.min.js）の読み込みに失敗しました。<br>index.htmlと同じフォルダにthree.min.jsを置いてください。</div>
@@ -191,15 +193,16 @@ function terrainNoise(x, z) {
   h += (vnoise(x*0.10 + 53,  z*0.10 + 71)  - 0.5) * 1.1;  // 細かい雪面
   return h;
 }
-// キッカー（ジャンプ台）— 地形関数に焼き込むことで当たり判定と見た目が完全一致
+// キッカー（テーブルトップ型ジャンプ台）— 地形関数に焼き込むことで当たり判定と見た目が完全一致
 function kickerInfo(k) {
   const r = hash(k*7919, 1237);
   if (k < 1 || r < 0.30) return null;
   return {
     xc: (hash(k*104729, 77) - 0.5) * 140,
     zc: k * KICK_SPACING + KICK_SPACING * 0.5,
-    L: 28, W: 20,
-    H: 4.2 + r * 3.2,
+    Lr: 13, Lt: 14, Ll: 21,            // 踏切ランプ・テーブル・着地斜面の長さ
+    L: 48, W: 22,
+    H: 3.6 + r * 2.6,
   };
 }
 function kickerHeight(x, z) {
@@ -210,9 +213,13 @@ function kickerHeight(x, z) {
     if (!kk) continue;
     const dz = z - kk.zc, dx = x - kk.xc;
     if (dz < -kk.L/2 || dz > kk.L/2 || Math.abs(dx) > kk.W/2) continue;
-    const along = (dz + kk.L/2) / kk.L;                       // 0(手前)→1(リップ)
+    const u = dz + kk.L/2;
+    let prof;
+    if (u < kk.Lr) prof = Math.pow(u / kk.Lr, 1.5);            // 踏切ランプ
+    else if (u < kk.Lr + kk.Lt) prof = 1;                       // テーブル（平ら）
+    else prof = 1 - smoothT((u - kk.Lr - kk.Lt) / kk.Ll);       // 着地斜面
     const lat = 1 - smoothT(Math.min(1, Math.abs(dx)/(kk.W/2)));
-    h += Math.pow(along, 1.7) * kk.H * lat;
+    h += prof * kk.H * lat;
   }
   return h;
 }
@@ -231,6 +238,25 @@ function normalAt(x, z) {
     2*e,
     heightAt(x, z-e) - heightAt(x, z+e)
   ).normalize();
+}
+
+// レールセクション（グラインド用）
+const RAIL_SPACING = 230;
+function railInfo(j) {
+  const r = hash(j*6113, 991);
+  if (j < 1 || r < 0.40) return null;
+  const xc = (hash(j*7727, 53) - 0.5) * 90;
+  const z0 = j * RAIL_SPACING + 70;
+  const L = 20 + r * 12;
+  // キッカーと重なる場所には置かない
+  if (kickerHeight(xc, z0) > 0.05 || kickerHeight(xc, z0 + L/2) > 0.05 || kickerHeight(xc, z0 + L) > 0.05) return null;
+  const yA = heightAt(xc, z0) + 0.62;
+  const yB = heightAt(xc, z0 + L) + 0.62;
+  return { xc, z0, L, yA, yB };
+}
+function railYAt(rl, z) {
+  const t = Math.min(1, Math.max(0, (z - rl.z0) / rl.L));
+  return rl.yA + (rl.yB - rl.yA) * t;
 }
 
 /* ============================== チャンク生成 ============================== */
@@ -286,7 +312,20 @@ function makeChunk() {
   }
   scene.add(flags);
 
-  return { mesh, trees, trunks, caps, rocks, flags, z0: 0, colliders: [] };
+  // レール（最大1本：チューブ＋支柱）
+  const railMat = new THREE.MeshStandardMaterial({ color:0x9aa3ad, roughness:0.25, metalness:0.9 });
+  const rail = new THREE.Group();
+  const railTube = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 1, 10), railMat);
+  railTube.castShadow = true;
+  rail.add(railTube);
+  const railPosts = [];
+  for (let p = 0; p < 7; p++) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1, 8), railMat);
+    rail.add(post); railPosts.push(post);
+  }
+  scene.add(rail);
+
+  return { mesh, trees, trunks, caps, rocks, flags, rail, railTube, railPosts, z0: 0, colliders: [] };
 }
 
 function rebuildChunk(ch, z0) {
@@ -323,6 +362,16 @@ function rebuildChunk(ch, z0) {
     const x = (v < 0.5 ? -1 : 1) * (27 + u * 82);
     const z = z0 + w * CHUNK_LEN;
     if (kickerHeight(x, z) > 0.05) continue;
+    // レールの近くにも置かない
+    {
+      const jr = Math.floor(z / RAIL_SPACING);
+      let nearRail = false;
+      for (let j = jr - 1; j <= jr + 1; j++) {
+        const rl = railInfo(j);
+        if (rl && Math.abs(x - rl.xc) < 4 && z > rl.z0 - 4 && z < rl.z0 + rl.L + 4) { nearRail = true; break; }
+      }
+      if (nearRail) continue;
+    }
     const y = heightAt(x, z);
     const sc = 0.75 + hash(seed*7+5, i*9+4) * 0.9;
     const rot = hash(seed*11+6, i*13+5) * Math.PI * 2;
@@ -348,17 +397,43 @@ function rebuildChunk(ch, z0) {
   ch.rocks.instanceMatrix.needsUpdate = true;
   for (const im of [ch.trees, ch.trunks, ch.caps, ch.rocks]) { if (im.computeBoundingSphere) im.computeBoundingSphere(); }
 
-  // 旗：このチャンク内にキッカーのリップがあれば表示
+  // 旗：このチャンク内にキッカーの踏切リップがあれば表示
   ch.flags.visible = false;
   const k0 = Math.floor(z0 / KICK_SPACING), k1 = Math.floor((z0 + CHUNK_LEN) / KICK_SPACING);
   for (let k = k0; k <= k1; k++) {
     const kk = kickerInfo(k);
     if (!kk) continue;
-    const lipZ = kk.zc + kk.L/2 - 1.5;
+    const lipZ = kk.zc - kk.L/2 + kk.Lr;        // テーブル前縁（踏切の頂点）
     if (lipZ < z0 || lipZ >= z0 + CHUNK_LEN) continue;
     ch.flags.visible = true;
     ch.flags.children[0].position.set(kk.xc - kk.W/2 - 1, heightAt(kk.xc - kk.W/2 - 1, lipZ), lipZ);
     ch.flags.children[1].position.set(kk.xc + kk.W/2 + 1, heightAt(kk.xc + kk.W/2 + 1, lipZ), lipZ);
+    break;
+  }
+
+  // レール：このチャンク内に始点があれば配置
+  ch.rail.visible = false;
+  const j0 = Math.floor(z0 / RAIL_SPACING), j1 = Math.floor((z0 + CHUNK_LEN) / RAIL_SPACING);
+  for (let j = j0; j <= j1; j++) {
+    const rl = railInfo(j);
+    if (!rl || rl.z0 < z0 || rl.z0 >= z0 + CHUNK_LEN) continue;
+    ch.rail.visible = true;
+    const A = new THREE.Vector3(rl.xc, rl.yA, rl.z0);
+    const B = new THREE.Vector3(rl.xc, rl.yB, rl.z0 + rl.L);
+    const dir = new THREE.Vector3().subVectors(B, A);
+    const len = dir.length();
+    ch.railTube.position.copy(A).addScaledVector(dir, 0.5);
+    ch.railTube.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    ch.railTube.scale.set(1, len, 1);
+    for (let p = 0; p < ch.railPosts.length; p++) {
+      const t = (p + 0.5) / ch.railPosts.length;
+      const z = rl.z0 + rl.L * t;
+      const yTop = railYAt(rl, z) - 0.05;
+      const yG = heightAt(rl.xc, z);
+      const hh = Math.max(0.1, yTop - yG);
+      ch.railPosts[p].position.set(rl.xc, yG + hh/2, z);
+      ch.railPosts[p].scale.set(1, hh, 1);
+    }
     break;
   }
 }
@@ -588,6 +663,17 @@ scene.add(player);
 }
 
 /* ============================== パーティクル ============================== */
+// 柔らかい円形のパーティクルテクスチャ（四角いポイント描画を防ぐ）
+const softTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const rg = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  rg.addColorStop(0, 'rgba(255,255,255,1)');
+  rg.addColorStop(0.7, 'rgba(255,255,255,0.5)');
+  rg.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
 // 降雪
 const SNOW_N = 1400;
 let snowPts, snowVel;
@@ -602,7 +688,7 @@ let snowPts, snowVel;
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-  snowPts = new THREE.Points(g, new THREE.PointsMaterial({ color:0xffffff, size:0.22, transparent:true, opacity:0.85, sizeAttenuation:true }));
+  snowPts = new THREE.Points(g, new THREE.PointsMaterial({ color:0xffffff, map:softTex, size:0.25, transparent:true, opacity:0.85, sizeAttenuation:true, depthWrite:false }));
   snowPts.frustumCulled = false;
   scene.add(snowPts);
 }
@@ -615,7 +701,7 @@ let sprayPts, sprayData, sprayIdx = 0;
   for (let i = 0; i < SPRAY_N; i++) sprayData.push({ life:0, vx:0, vy:0, vz:0 });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-  sprayPts = new THREE.Points(g, new THREE.PointsMaterial({ color:0xffffff, size:0.5, transparent:true, opacity:0.75, sizeAttenuation:true, depthWrite:false }));
+  sprayPts = new THREE.Points(g, new THREE.PointsMaterial({ color:0xffffff, map:softTex, size:0.5, transparent:true, opacity:0.75, sizeAttenuation:true, depthWrite:false }));
   sprayPts.frustumCulled = false;
   scene.add(sprayPts);
 }
@@ -689,7 +775,9 @@ const pos = new THREE.Vector3(0, 0, 5);
 const vel = new THREE.Vector3(0, 0, 8);
 let heading = 0;               // 0 = 真っ直ぐ下り(+z)
 let grounded = true;
-let spinOff = 0, spinDeg = 0, flipDeg = 0, grabTime = 0;
+let spinOff = 0, spinDeg = 0, flipDeg = 0;
+let grabs = {}, curGrab = null;       // 空中グラブ（種類→ホールド時間）
+let grinding = null, grindT = 0;      // レールグラインド中の状態
 let takeoffT = 0, airTime = 0;
 let charge = 0, charging = false, prevJump = false;
 let crashT = 0, crashSpinX = 0, crashSpinZ = 0;
@@ -729,11 +817,13 @@ function foldDeg(a, period) {
   return f;
 }
 const SPIN_PTS = { 180:100, 360:280, 540:520, 720:850, 900:1250, 1080:1800 };
+const GRAB_PTS = { INDY:80, NOSE:100, TAIL:100, MELON:120, STALEFISH:140 };
 
 function resetRun() {
   pos.set(0, heightAt(0, 5), 5);
   vel.set(0, 0, 8);
-  heading = 0; spinOff = 0; spinDeg = 0; flipDeg = 0; grabTime = 0;
+  heading = 0; spinOff = 0; spinDeg = 0; flipDeg = 0;
+  grabs = {}; curGrab = null; grinding = null; grindT = 0;
   grounded = true; charge = 0; charging = false;
   crashT = 0; score = 0; trickScore = 0; combo = 0; shake = 0;
   tiltG.rotation.set(0,0,0);
@@ -746,6 +836,7 @@ function doCrash(label) {
   crashT = 1.1;
   combo = 0;
   hitCooldown = 2.0;
+  grabs = {}; curGrab = null; grinding = null; grindT = 0;
   vel.multiplyScalar(0.5);
   crashSpinX = (Math.random()-0.5) * 10;
   crashSpinZ = (Math.random()-0.5) * 10;
@@ -765,12 +856,13 @@ function landEval() {
 
   // 大きくズレた着地のみ転倒、中程度のズレは「よろけ」（減速のみ）で耐える
   if (airTime > 0.35 && (Math.abs(misDeg) > 80 || flipMis > 110)) {
-    heading = velYaw; spinOff = 0; spinDeg = 0; flipDeg = 0; grabTime = 0;
+    heading = velYaw; spinOff = 0; spinDeg = 0; flipDeg = 0;
     doCrash('WIPEOUT!');
     return;
   }
   if (airTime > 0.35 && (Math.abs(misDeg) > 50 || flipMis > 65)) {
-    heading = velYaw; spinOff = 0; spinDeg = 0; flipDeg = 0; grabTime = 0;
+    heading = velYaw; spinOff = 0; spinDeg = 0; flipDeg = 0;
+    grabs = {}; curGrab = null;
     vel.multiplyScalar(0.6);
     shake = Math.max(shake, 0.5);
     showTrick('SKETCHY!', 0, true);
@@ -788,7 +880,11 @@ function landEval() {
     names.push((spinDeg > 0 ? 'FS ' : 'BS ') + spins);
     pts += SPIN_PTS[Math.min(spins, 1080)] || 1800;
   }
-  if (grabTime > 0.3) { names.push('INDY GRAB'); pts += Math.round(grabTime * 150); }
+  for (const g in grabs) {
+    if (grabs[g] < 0.25) continue;
+    names.push(g === 'MELON' || g === 'STALEFISH' ? g : g + ' GRAB');
+    pts += GRAB_PTS[g] + Math.round(grabs[g] * 130);
+  }
   if (names.length === 0 && airTime > 1.1) { names.push('BIG AIR'); pts += Math.round(airTime * 80); }
 
   if (pts > 0) {
@@ -800,7 +896,19 @@ function landEval() {
     shake = Math.min(shake + 0.25, 0.6);
   }
   heading = velYaw;
-  spinOff = 0; spinDeg = 0; flipDeg = 0; grabTime = 0;
+  spinOff = 0; spinDeg = 0; flipDeg = 0;
+  grabs = {}; curGrab = null;
+}
+
+// グラインド終了時のスコア確定
+function finishGrind() {
+  const pts = 120 + Math.round(grindT * 22) * 10;
+  combo = Math.min(combo + 1, 9);
+  const total = pts * combo;
+  trickScore += total;
+  lastTrickT = elapsed;
+  showTrick('50-50 GRIND', total, false);
+  grinding = null; grindT = 0;
 }
 
 /* ============================== メインループ ============================== */
@@ -825,6 +933,28 @@ function update(dt) {
       heading = Math.atan2(vel.x, vel.z) || 0;
       if (vel.lengthSq() < 9) { vel.set(Math.sin(heading), 0, Math.cos(heading)).multiplyScalar(4); }
     }
+  } else if (state === 'play' && grinding) {
+    // レールグラインド中：レール上を直進、SPACEまたは末端で降りる
+    grindT += dt;
+    const rl = grinding;
+    vel.y = 0; vel.x = 0;
+    vel.z = Math.max(8, vel.z * Math.pow(0.995, dt * 60));
+    pos.x += (rl.xc - pos.x) * Math.min(1, 12 * dt);
+    pos.z += vel.z * dt;
+    pos.y = railYAt(rl, pos.z);
+    heading += (0 - heading) * Math.min(1, 10 * dt);
+    spinOff = 0; spinDeg = 0; flipDeg = 0;
+    takeoffT = elapsed;                  // 降りた瞬間からエア時間を数える
+    if (Math.random() < dt * 25)
+      spawnSpray(pos.x, pos.y - 0.1, pos.z, (Math.random()-0.5)*2, 0.5, -1);
+    const hop = inJump() && !prevJump;
+    if (hop || pos.z > rl.z0 + rl.L) {
+      finishGrind();
+      vel.y = hop ? 6.5 : 1.5;
+      grounded = false;
+      hitCooldown = Math.max(hitCooldown, 0.4);
+    }
+    prevJump = inJump();
   } else if (state === 'play') {
     const speed = vel.length();
 
@@ -886,14 +1016,21 @@ function update(dt) {
         );
       }
     } else {
-      // 空中：トリック
+      // 空中：トリック（SHIFT中は方向キーがグラブ選択になり回転は止まる）
       vel.y -= 19.6 * dt;
-      const spinRate = 5.6;
-      spinOff += turnIn * spinRate * dt;
-      spinDeg += turnIn * spinRate * dt * 180/Math.PI;
-      const flipIn = (inDown() ? -1 : 0) + (inUp() ? 1 : 0);
-      flipDeg += flipIn * 360 * dt;
-      if (inGrab()) grabTime += dt;
+      if (inGrab()) {
+        if (!curGrab) {
+          curGrab = inUp() ? 'NOSE' : inDown() ? 'TAIL' : inLeft() ? 'MELON' : inRight() ? 'STALEFISH' : 'INDY';
+        }
+        grabs[curGrab] = (grabs[curGrab] || 0) + dt;
+      } else {
+        curGrab = null;
+        const spinRate = 5.6;
+        spinOff += turnIn * spinRate * dt;
+        spinDeg += turnIn * spinRate * dt * 180/Math.PI;
+        const flipIn = (inDown() ? -1 : 0) + (inUp() ? 1 : 0);
+        flipDeg += flipIn * 360 * dt;
+      }
       charging = false; charge = 0;
     }
     prevJump = inJump();
@@ -917,6 +1054,27 @@ function update(dt) {
       if (vn < 0) vel.addScaledVector(n, -vn);
     } else if (pos.y > gh + 0.25) {
       if (grounded) { grounded = false; takeoffT = elapsed; }
+    }
+
+    // レールへの飛び乗り（空中からレール上面付近に降りてきたらグラインド開始）
+    if (!grinding && state === 'play' && vel.z > 4) {
+      const jr = Math.floor(pos.z / RAIL_SPACING);
+      for (let j = jr - 1; j <= jr + 1; j++) {
+        const rl = railInfo(j);
+        if (!rl) continue;
+        if (pos.z < rl.z0 - 0.5 || pos.z > rl.z0 + rl.L - 2) continue;
+        if (Math.abs(pos.x - rl.xc) > 0.6) continue;
+        const ry = railYAt(rl, pos.z);
+        if (pos.y > ry - 0.25 && pos.y < ry + 1.0 && vel.y < 3) {
+          grinding = rl; grindT = 0;
+          pos.y = ry; vel.y = 0;
+          spinOff = 0; spinDeg = 0; flipDeg = 0; grabs = {}; curGrab = null;
+          grounded = false;
+          charging = false; charge = 0;
+          shake = Math.max(shake, 0.2);
+          break;
+        }
+      }
     }
 
     // 障害物との衝突：かすめた場合は弾かれて減速するだけ、高速の正面衝突のみ転倒
@@ -975,11 +1133,13 @@ function update(dt) {
     const slopePitch = grounded ? Math.atan2(-(heightAt(pos.x + fwd.x, pos.z + fwd.z) - pos.y), 1) : 0;
     const targetPitch = grounded ? slopePitch * 0.6 : flipDeg * Math.PI/180;
     const turnInNow = (inLeft()?1:0) - (inRight()?1:0);
-    const targetRoll = grounded ? turnInNow * Math.min(0.5, vel.length()*0.012) : 0;
-    const k = grounded ? 1 - Math.exp(-10*dt) : 1;
+    const grabRoll = curGrab === 'MELON' ? 0.35 : curGrab === 'STALEFISH' ? -0.35 : 0;
+    const targetRoll = grounded ? turnInNow * Math.min(0.5, vel.length()*0.012) : grabRoll;
+    const k = grounded ? 1 - Math.exp(-10*dt) : 1 - Math.exp(-14*dt);
     tiltG.rotation.x += (targetPitch - tiltG.rotation.x) * k;
     tiltG.rotation.z += (targetRoll - tiltG.rotation.z) * k;
-    if (!grounded) tiltG.rotation.x = flipDeg * Math.PI/180;
+    if (!grounded) tiltG.rotation.x = flipDeg * Math.PI/180
+      + (curGrab === 'NOSE' ? -0.28 : curGrab === 'TAIL' ? 0.28 : 0);
     // しゃがみ
     const crouch = charging ? 1 - charge*0.35 : (inGrab() && !grounded ? 0.8 : 1);
     rider.scale.y += (crouch - rider.scale.y) * (1 - Math.exp(-12*dt));
@@ -1025,6 +1185,8 @@ function update(dt) {
       if (y < camPos.y - 25) { y += 60; x = camPos.x + (Math.random()-0.5)*140; z = camPos.z + (Math.random()-0.5)*140; }
       if (x < camPos.x - 70) x += 140; else if (x > camPos.x + 70) x -= 140;
       if (z < camPos.z - 70) z += 140; else if (z > camPos.z + 70) z -= 140;
+      // カメラの至近距離を通る雪は巨大に見えるのでずらす
+      if (Math.abs(x - camPos.x) < 2.5 && Math.abs(y - camPos.y) < 2.5 && Math.abs(z - camPos.z) < 2.5) x += 6;
       a.setXYZ(i, x, y, z);
     }
     a.needsUpdate = true;
