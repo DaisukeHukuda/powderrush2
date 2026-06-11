@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>POWDER RUSH — Snowboard</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0a1525; font-family:"Hiragino Kaku Gothic ProN","Segoe UI",system-ui,sans-serif; }
+  canvas { display:block; }
+
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:5; color:#fff; }
+
+  .panel { position:absolute; backdrop-filter:blur(4px); }
+
+  #scorebox { top:18px; left:20px; text-align:left; text-shadow:0 2px 8px rgba(10,30,60,.55); }
+  #scorebox .label { font-size:11px; letter-spacing:3px; opacity:.85; font-weight:700; }
+  #score { font-size:42px; font-weight:800; line-height:1.05; font-variant-numeric:tabular-nums; }
+  #hiscore { font-size:13px; opacity:.85; font-variant-numeric:tabular-nums; }
+  #dist { top:18px; right:22px; text-align:right; font-size:15px; font-weight:700; text-shadow:0 2px 8px rgba(10,30,60,.55); font-variant-numeric:tabular-nums; }
+
+  #speedbox { bottom:24px; right:26px; text-align:right; text-shadow:0 2px 10px rgba(10,30,60,.6); }
+  #speed { font-size:54px; font-weight:800; font-style:italic; line-height:.95; font-variant-numeric:tabular-nums; }
+  #speedunit { font-size:13px; letter-spacing:3px; font-weight:700; opacity:.85; }
+
+  #combo { position:absolute; top:18px; left:50%; transform:translateX(-50%); font-size:26px; font-weight:800; font-style:italic;
+    color:#ffd34d; text-shadow:0 0 18px rgba(255,180,40,.7), 0 2px 6px rgba(0,0,0,.4); opacity:0; transition:opacity .3s; }
+  #combo.on { opacity:1; }
+
+  #trickwrap { position:absolute; top:30%; left:0; right:0; text-align:center; }
+  .trick { font-size:40px; font-weight:900; font-style:italic; letter-spacing:1px; color:#fff;
+    text-shadow:0 0 22px rgba(120,200,255,.9), 0 3px 10px rgba(0,20,60,.5);
+    animation:pop 1.6s cubic-bezier(.18,1.4,.4,1) forwards; }
+  .trick .pts { display:block; font-size:24px; color:#7fe3ff; font-style:normal; letter-spacing:2px; }
+  .trick.bad { color:#ff6b5e; text-shadow:0 0 22px rgba(255,80,60,.8), 0 3px 10px rgba(60,0,0,.5); }
+  @keyframes pop {
+    0%   { transform:scale(.3) rotate(-4deg); opacity:0; }
+    12%  { transform:scale(1.15) rotate(1deg); opacity:1; }
+    22%  { transform:scale(1); }
+    75%  { transform:scale(1); opacity:1; }
+    100% { transform:scale(.92) translateY(-26px); opacity:0; }
+  }
+
+  #chargewrap { position:absolute; bottom:30px; left:50%; transform:translateX(-50%); width:180px; height:8px;
+    background:rgba(255,255,255,.18); border-radius:4px; overflow:hidden; opacity:0; transition:opacity .15s; }
+  #chargewrap.on { opacity:1; }
+  #chargebar { height:100%; width:0%; background:linear-gradient(90deg,#4dc3ff,#b1ff4d); border-radius:4px; }
+
+  #controls { position:absolute; bottom:22px; left:24px; font-size:12px; line-height:1.7; opacity:.75; text-shadow:0 1px 4px rgba(0,0,0,.5); }
+  #controls b { display:inline-block; min-width:108px; color:#9fd4ff; font-weight:700; }
+
+  #vignette { position:fixed; inset:0; pointer-events:none; z-index:4;
+    background:radial-gradient(ellipse at center, transparent 58%, rgba(8,20,45,.38) 100%); }
+  #flash { position:fixed; inset:0; pointer-events:none; z-index:6; background:radial-gradient(ellipse at center, rgba(255,40,20,0) 40%, rgba(255,40,20,.45) 100%); opacity:0; transition:opacity .12s; }
+
+  #start { position:fixed; inset:0; z-index:10; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:linear-gradient(180deg, rgba(8,20,45,.55), rgba(8,20,45,.82)); color:#fff; cursor:pointer; }
+  #title { font-size:72px; font-weight:900; font-style:italic; letter-spacing:2px;
+    background:linear-gradient(180deg,#fff 30%, #8fd0ff 70%, #4d9fe8);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 4px 24px rgba(80,160,255,.5)); }
+  #subtitle { font-size:16px; letter-spacing:10px; margin-top:4px; color:#bfe0ff; font-weight:700; }
+  #startbtn { margin-top:44px; padding:14px 64px; font-size:20px; font-weight:800; letter-spacing:4px; color:#06223f;
+    background:linear-gradient(180deg,#dff3ff,#8fd0ff); border:none; border-radius:40px; cursor:pointer;
+    box-shadow:0 0 30px rgba(110,190,255,.55), inset 0 -3px 0 rgba(30,90,160,.4);
+    animation:breathe 1.8s ease-in-out infinite; }
+  @keyframes breathe { 0%,100%{transform:scale(1);} 50%{transform:scale(1.05);} }
+  #startcontrols { margin-top:36px; font-size:13px; line-height:2; color:#cfe4ff; text-align:left; }
+  #startcontrols b { display:inline-block; min-width:140px; color:#8fd0ff; }
+  #loaderr { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center; color:#fff; font-size:16px; background:#0a1525; text-align:center; line-height:2; padding:20px; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div id="scorebox" class="panel">
+    <div class="label">SCORE</div>
+    <div id="score">0</div>
+    <div id="hiscore">BEST 0</div>
+  </div>
+  <div id="dist" class="panel">0 m</div>
+  <div id="combo">COMBO x2</div>
+  <div id="trickwrap"></div>
+  <div id="speedbox" class="panel">
+    <div id="speed">0</div>
+    <div id="speedunit">KM/H</div>
+  </div>
+  <div id="chargewrap"><div id="chargebar"></div></div>
+  <div id="controls">
+    <div><b>← → / A D</b>ターン（空中でスピン）</div>
+    <div><b>↑ ↓ / W S</b>タック・ブレーキ（空中でフリップ）</div>
+    <div><b>SPACE 長押し→離す</b>ジャンプ</div>
+    <div><b>SHIFT</b>グラブ（空中）　<b>R</b>リスタート</div>
+  </div>
+</div>
+<div id="vignette"></div>
+<div id="flash"></div>
+
+<div id="start">
+  <div id="title">POWDER RUSH</div>
+  <div id="subtitle">パウダーラッシュ</div>
+  <button id="startbtn">RIDE</button>
+  <div id="startcontrols">
+    <div><b>← → / A D</b>ターン（空中でスピン）</div>
+    <div><b>↑ / W</b>タック加速　<b>↓ / S</b>ブレーキ</div>
+    <div><b>SPACE 長押し→離す</b>ジャンプ（溜めるほど高く）</div>
+    <div><b>SHIFT</b>空中でグラブ　/　キッカー（青い台）で大ジャンプ！</div>
+  </div>
+</div>
+<div id="loaderr">3Dライブラリ（three.min.js）の読み込みに失敗しました。<br>index.htmlと同じフォルダにthree.min.jsを置いてください。</div>
+
+<script src="./three.min.js"></script>
+<script>
+window.addEventListener('error', function(e) {
+  var d = document.getElementById('loaderr');
+  if (d && e.message) { d.style.display = 'flex'; d.innerHTML = 'エラーが発生しました:<br>' + e.message; }
+});
+if (!window.THREE) {
+  document.getElementById('loaderr').style.display = 'flex';
+  throw new Error('THREE not loaded');
+}
+
+/* ============================== 基本セットアップ ============================== */
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xd7e4f5, 70, 950);
+
+// 空のグラデーション
+{
+  const c = document.createElement('canvas'); c.width = 16; c.height = 512;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0.0, '#4d8fdd');
+  grad.addColorStop(0.45, '#8db8e8');
+  grad.addColorStop(0.75, '#d7e4f5');
+  grad.addColorStop(1.0, '#e8eef8');
+  g.fillStyle = grad; g.fillRect(0, 0, 16, 512);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  scene.background = tex;
+}
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 3000);
+
+const hemi = new THREE.HemisphereLight(0xbdd8ff, 0xe8eef8, 0.85);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff1dc, 2.1);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -70; sun.shadow.camera.right = 70;
+sun.shadow.camera.top = 70; sun.shadow.camera.bottom = -70;
+sun.shadow.camera.near = 10; sun.shadow.camera.far = 400;
+sun.shadow.bias = -0.0004;
+scene.add(sun); scene.add(sun.target);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ============================== 地形（解析的ハイトフィールド） ============================== */
+const SLOPE = 0.40;            // 1m進むごとの下り
+const CHUNK_LEN = 120, CHUNK_W = 340, SEG_X = 84, SEG_Z = 40, NUM_CHUNKS = 8;
+const KICK_SPACING = 175;
+
+function hash(ix, iz) {
+  let n = (ix * 374761393 + iz * 668265263) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  n = (n ^ (n >>> 16)) >>> 0;
+  return n / 4294967295;
+}
+function smoothT(t){ return t*t*(3-2*t); }
+function vnoise(x, z) {
+  const ix = Math.floor(x), iz = Math.floor(z), fx = x-ix, fz = z-iz;
+  const a = hash(ix,iz), b = hash(ix+1,iz), c = hash(ix,iz+1), d = hash(ix+1,iz+1);
+  const u = smoothT(fx), v = smoothT(fz);
+  return a*(1-u)*(1-v) + b*u*(1-v) + c*(1-u)*v + d*u*v;
+}
+function terrainNoise(x, z) {
+  let h = 0;
+  h += (vnoise(x*0.007,      z*0.007)      - 0.5) * 30;   // 大きなうねり
+  h += (vnoise(x*0.028 + 17, z*0.028 + 31) - 0.5) * 5.5;  // コブ
+  h += (vnoise(x*0.10 + 53,  z*0.10 + 71)  - 0.5) * 1.1;  // 細かい雪面
+  return h;
+}
+// キッカー（ジャンプ台）— 地形関数に焼き込むことで当たり判定と見た目が完全一致
+function kickerInfo(k) {
+  const r = hash(k*7919, 1237);
+  if (k < 1 || r < 0.30) return null;
+  return {
+    xc: (hash(k*104729, 77) - 0.5) * 140,
+    zc: k * KICK_SPACING + KICK_SPACING * 0.5,
+    L: 28, W: 20,
+    H: 4.2 + r * 3.2,
+  };
+}
+function kickerHeight(x, z) {
+  const i = Math.floor(z / KICK_SPACING);
+  let h = 0;
+  for (let k = i - 1; k <= i + 1; k++) {
+    const kk = kickerInfo(k);
+    if (!kk) continue;
+    const dz = z - kk.zc, dx = x - kk.xc;
+    if (dz < -kk.L/2 || dz > kk.L/2 || Math.abs(dx) > kk.W/2) continue;
+    const along = (dz + kk.L/2) / kk.L;                       // 0(手前)→1(リップ)
+    const lat = 1 - smoothT(Math.min(1, Math.abs(dx)/(kk.W/2)));
+    h += Math.pow(along, 1.7) * kk.H * lat;
+  }
+  return h;
+}
+function heightAt(x, z) {
+  let h = -z * SLOPE + terrainNoise(x, z);
+  const t = Math.abs(x) / 115;                                // 谷状コース（左右の壁）
+  h += t*t*t * 70;
+  h += kickerHeight(x, z);
+  return h;
+}
+const _n = new THREE.Vector3();
+function normalAt(x, z) {
+  const e = 0.55;
+  return _n.set(
+    heightAt(x-e, z) - heightAt(x+e, z),
+    2*e,
+    heightAt(x, z-e) - heightAt(x, z+e)
+  ).normalize();
+}
+
+/* ============================== チャンク生成 ============================== */
+const snowMat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.92, metalness:0.0 });
+const trunkMat = new THREE.MeshStandardMaterial({ color:0x6b4a2f, roughness:0.95 });
+const canopyMat = new THREE.MeshStandardMaterial({ color:0x1d4a30, roughness:0.9, flatShading:true });
+const capMat = new THREE.MeshStandardMaterial({ color:0xeef5ff, roughness:0.85, flatShading:true });
+const rockMat = new THREE.MeshStandardMaterial({ color:0x8b929c, roughness:0.95, flatShading:true });
+const poleMat = new THREE.MeshStandardMaterial({ color:0xff3b30, roughness:0.6 });
+const flagMat = new THREE.MeshBasicMaterial({ color:0xff3b30, side:THREE.DoubleSide });
+
+const trunkGeo = new THREE.CylinderGeometry(0.16, 0.26, 1.8, 6);
+trunkGeo.translate(0, 0.9, 0);
+const canopyGeo = new THREE.ConeGeometry(1.6, 4.6, 7);
+canopyGeo.translate(0, 3.6, 0);
+const capGeo = new THREE.ConeGeometry(0.95, 1.8, 7);
+capGeo.translate(0, 5.2, 0);
+const rockGeo = new THREE.DodecahedronGeometry(1.2, 0);
+const poleGeo = new THREE.CylinderGeometry(0.06, 0.06, 3.2, 6);
+poleGeo.translate(0, 1.6, 0);
+const flagGeo = new THREE.PlaneGeometry(0.9, 0.55);
+flagGeo.translate(0.45, 2.8, 0);
+
+const MAX_TREE = 52, MAX_ROCK = 14;
+const chunks = [];
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
+
+function makeChunk() {
+  const geo = new THREE.PlaneGeometry(CHUNK_W, CHUNK_LEN, SEG_X, SEG_Z);
+  geo.rotateX(-Math.PI/2);
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 3), 3));
+  const mesh = new THREE.Mesh(geo, snowMat);
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+
+  const trees = new THREE.InstancedMesh(canopyGeo, canopyMat, MAX_TREE);
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, MAX_TREE);
+  const caps = new THREE.InstancedMesh(capGeo, capMat, MAX_TREE);
+  const rocks = new THREE.InstancedMesh(rockGeo, rockMat, MAX_ROCK);
+  for (const im of [trees, trunks, caps, rocks]) {
+    im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    im.castShadow = true;
+    scene.add(im);
+  }
+  // キッカーの旗（最大1組）
+  const flags = new THREE.Group();
+  for (let s = 0; s < 2; s++) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(poleGeo, poleMat));
+    const f = new THREE.Mesh(flagGeo, flagMat);
+    g.add(f);
+    flags.add(g);
+  }
+  scene.add(flags);
+
+  return { mesh, trees, trunks, caps, rocks, flags, z0: 0, colliders: [] };
+}
+
+function rebuildChunk(ch, z0) {
+  ch.z0 = z0;
+  ch.mesh.position.set(0, 0, z0 + CHUNK_LEN/2);
+  const pos = ch.mesh.geometry.attributes.position;
+  const col = ch.mesh.geometry.attributes.color;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = z0 + CHUNK_LEN/2 + pos.getZ(i);
+    pos.setY(i, heightAt(x, z));
+  }
+  pos.needsUpdate = true;
+  ch.mesh.geometry.computeVertexNormals();
+  const nor = ch.mesh.geometry.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = z0 + CHUNK_LEN/2 + pos.getZ(i);
+    const ny = nor.getY(i);
+    const steep = Math.min(1, Math.max(0, (1 - ny) * 3.2));
+    const jitter = (hash(Math.floor(x*7), Math.floor(z*7)) - 0.5) * 0.045;
+    let r = 0.96, g = 0.97, b = 1.0;
+    r = r*(1-steep) + 0.62*steep; g = g*(1-steep) + 0.72*steep; b = b*(1-steep) + 0.86*steep;
+    if (kickerHeight(x, z) > 0.25) { r *= 0.62; g *= 0.84; b *= 1.0; }   // キッカーは青く
+    col.setXYZ(i, Math.min(1, r+jitter), Math.min(1, g+jitter), Math.min(1, b+jitter));
+  }
+  col.needsUpdate = true;
+  ch.mesh.geometry.computeBoundingSphere();
+
+  // 樹木・岩の配置
+  const seed = Math.round(z0 / CHUNK_LEN);
+  ch.colliders.length = 0;
+  let nt = 0, nr = 0;
+  for (let i = 0; i < 70 && (nt < MAX_TREE || nr < MAX_ROCK); i++) {
+    const u = hash(seed*3+1, i*5+1), v = hash(seed*3+2, i*5+2), w = hash(seed*3+3, i*5+3);
+    const x = (v < 0.5 ? -1 : 1) * (27 + u * 82);
+    const z = z0 + w * CHUNK_LEN;
+    if (kickerHeight(x, z) > 0.05) continue;
+    const y = heightAt(x, z);
+    const sc = 0.75 + hash(seed*7+5, i*9+4) * 0.9;
+    const rot = hash(seed*11+6, i*13+5) * Math.PI * 2;
+    _q.setFromAxisAngle(new THREE.Vector3(0,1,0), rot);
+    if (hash(seed*5, i*7) < 0.82 && nt < MAX_TREE) {
+      _m4.compose(_p.set(x, y-0.2, z), _q, _s.set(sc, sc, sc));
+      ch.trees.setMatrixAt(nt, _m4);
+      ch.trunks.setMatrixAt(nt, _m4);
+      ch.caps.setMatrixAt(nt, _m4);
+      ch.colliders.push({ x, z, r: 1.15*sc });
+      nt++;
+    } else if (nr < MAX_ROCK) {
+      _m4.compose(_p.set(x, y+0.15*sc, z), _q, _s.set(sc*1.2, sc*0.85, sc*1.2));
+      ch.rocks.setMatrixAt(nr, _m4);
+      ch.colliders.push({ x, z, r: 1.45*sc });
+      nr++;
+    }
+  }
+  ch.trees.count = nt; ch.trunks.count = nt; ch.caps.count = nt; ch.rocks.count = nr;
+  ch.trees.instanceMatrix.needsUpdate = true;
+  ch.trunks.instanceMatrix.needsUpdate = true;
+  ch.caps.instanceMatrix.needsUpdate = true;
+  ch.rocks.instanceMatrix.needsUpdate = true;
+  for (const im of [ch.trees, ch.trunks, ch.caps, ch.rocks]) { if (im.computeBoundingSphere) im.computeBoundingSphere(); }
+
+  // 旗：このチャンク内にキッカーのリップがあれば表示
+  ch.flags.visible = false;
+  const k0 = Math.floor(z0 / KICK_SPACING), k1 = Math.floor((z0 + CHUNK_LEN) / KICK_SPACING);
+  for (let k = k0; k <= k1; k++) {
+    const kk = kickerInfo(k);
+    if (!kk) continue;
+    const lipZ = kk.zc + kk.L/2 - 1.5;
+    if (lipZ < z0 || lipZ >= z0 + CHUNK_LEN) continue;
+    ch.flags.visible = true;
+    ch.flags.children[0].position.set(kk.xc - kk.W/2 - 1, heightAt(kk.xc - kk.W/2 - 1, lipZ), lipZ);
+    ch.flags.children[1].position.set(kk.xc + kk.W/2 + 1, heightAt(kk.xc + kk.W/2 + 1, lipZ), lipZ);
+    break;
+  }
+}
+
+for (let i = 0; i < NUM_CHUNKS; i++) {
+  const ch = makeChunk();
+  rebuildChunk(ch, (i - 1) * CHUNK_LEN);
+  chunks.push(ch);
+}
+
+/* ============================== 遠景（山・雲・太陽） ============================== */
+const backdrop = new THREE.Group();
+scene.add(backdrop);
+{
+  const mtnMat = new THREE.MeshStandardMaterial({ color:0xcfdded, roughness:1, flatShading:true, fog:true });
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2 + hash(i, 3) * 0.3;
+    const rad = 750 + hash(i, 5) * 380;
+    const h = 200 + hash(i, 7) * 320;
+    const m = new THREE.Mesh(new THREE.ConeGeometry(h*0.85, h, 5), mtnMat);
+    m.position.set(Math.cos(a)*rad, h*0.28, Math.sin(a)*rad);
+    m.rotation.y = hash(i, 11) * Math.PI;
+    backdrop.add(m);
+  }
+  // 雲
+  const cc = document.createElement('canvas'); cc.width = cc.height = 128;
+  const cg = cc.getContext('2d');
+  const rg = cg.createRadialGradient(64,64,8, 64,64,62);
+  rg.addColorStop(0, 'rgba(255,255,255,0.95)');
+  rg.addColorStop(0.6, 'rgba(255,255,255,0.45)');
+  rg.addColorStop(1, 'rgba(255,255,255,0)');
+  cg.fillStyle = rg; cg.fillRect(0,0,128,128);
+  const cloudTex = new THREE.CanvasTexture(cc);
+  for (let i = 0; i < 9; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:cloudTex, transparent:true, opacity:0.7, fog:false }));
+    const a = hash(i, 21) * Math.PI * 2;
+    sp.position.set(Math.cos(a)*650, 260 + hash(i,23)*200, Math.sin(a)*650);
+    sp.scale.set(280 + hash(i,25)*220, 90 + hash(i,27)*60, 1);
+    backdrop.add(sp);
+  }
+  // 太陽
+  const sc2 = document.createElement('canvas'); sc2.width = sc2.height = 128;
+  const sg2 = sc2.getContext('2d');
+  const rg2 = sg2.createRadialGradient(64,64,4, 64,64,62);
+  rg2.addColorStop(0, 'rgba(255,250,230,1)');
+  rg2.addColorStop(0.3, 'rgba(255,240,200,0.7)');
+  rg2.addColorStop(1, 'rgba(255,240,200,0)');
+  sg2.fillStyle = rg2; sg2.fillRect(0,0,128,128);
+  const sunSp = new THREE.Sprite(new THREE.SpriteMaterial({ map:new THREE.CanvasTexture(sc2), transparent:true, fog:false }));
+  sunSp.position.set(300, 520, -650);
+  sunSp.scale.set(320, 320, 1);
+  backdrop.add(sunSp);
+}
+
+/* ============================== プレイヤー（スノーボーダー） ============================== */
+const player = new THREE.Group();          // 位置 + ヨー（heading + spin）
+const tiltG = new THREE.Group();           // カーブの傾き・フリップ
+const rider = new THREE.Group();           // 身体（しゃがみ用）
+player.add(tiltG); tiltG.add(rider);
+scene.add(player);
+
+{
+  const boardMat = new THREE.MeshStandardMaterial({ color:0xff4d2e, roughness:0.35, metalness:0.15 });
+  const boardMesh = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 1.66), boardMat);
+  boardMesh.position.y = 0.06;
+  boardMesh.castShadow = true;
+  tiltG.add(boardMesh);
+  // ノーズ・テールのキック
+  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 0.22), boardMat);
+  tip.position.set(0, 0.11, 0.9); tip.rotation.x = -0.5; tiltG.add(tip);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 0.22), boardMat);
+  tail.position.set(0, 0.11, -0.9); tail.rotation.x = 0.5; tiltG.add(tail);
+
+  const jacket = new THREE.MeshStandardMaterial({ color:0x1f6fe0, roughness:0.7 });
+  const pants = new THREE.MeshStandardMaterial({ color:0x23272e, roughness:0.8 });
+  const skin = new THREE.MeshStandardMaterial({ color:0xe8b08a, roughness:0.7 });
+  const helmetM = new THREE.MeshStandardMaterial({ color:0xf2f4f8, roughness:0.3 });
+  const goggleM = new THREE.MeshStandardMaterial({ color:0x10131a, roughness:0.15, metalness:0.6 });
+
+  // サイドスタンス気味に
+  rider.rotation.y = 0.45;
+  const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.42, 4, 8), pants);
+  legL.position.set(-0.02, 0.42, 0.30); legL.rotation.x = 0.18; legL.rotation.z = 0.1;
+  const legR = legL.clone(); legR.position.set(0.02, 0.42, -0.30); legR.rotation.x = -0.18; legR.rotation.z = -0.1;
+  rider.add(legL, legR);
+  const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.32), pants);
+  bootL.position.set(0, 0.12, 0.32); rider.add(bootL);
+  const bootR = bootL.clone(); bootR.position.set(0, 0.12, -0.32); rider.add(bootR);
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.34, 4, 10), jacket);
+  torso.position.set(0, 0.92, 0); torso.rotation.x = 0.12;
+  torso.castShadow = true;
+  rider.add(torso);
+
+  const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.36, 4, 8), jacket);
+  armL.position.set(-0.24, 0.95, 0.05); armL.rotation.z = 0.9; armL.rotation.x = 0.2;
+  const armR = armL.clone(); armR.position.set(0.24, 0.95, -0.05); armR.rotation.z = -0.9; armR.rotation.x = -0.2;
+  rider.add(armL, armR);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.135, 12, 10), helmetM);
+  head.position.set(0, 1.32, 0);
+  head.castShadow = true;
+  rider.add(head);
+  const goggle = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.07, 0.12), goggleM);
+  goggle.position.set(0, 1.33, 0.09);
+  rider.add(goggle);
+  const chin = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), skin);
+  chin.position.set(0, 1.24, 0.06); rider.add(chin);
+}
+
+/* ============================== パーティクル ============================== */
+// 降雪
+const SNOW_N = 1400;
+let snowPts, snowVel;
+{
+  const posArr = new Float32Array(SNOW_N*3);
+  snowVel = new Float32Array(SNOW_N);
+  for (let i = 0; i < SNOW_N; i++) {
+    posArr[i*3] = (Math.random()-0.5)*140;
+    posArr[i*3+1] = Math.random()*60;
+    posArr[i*3+2] = (Math.random()-0.5)*140;
+    snowVel[i] = 1.5 + Math.random()*2.5;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  snowPts = new THREE.Points(g, new THREE.PointsMaterial({ color:0xffffff, size:0.22, transparent:true, opacity:0.85, sizeAttenuation:true }));
+  snowPts.frustumCulled = false;
+  scene.add(snowPts);
+}
+// 雪煙（スプレー）
+const SPRAY_N = 420;
+let sprayPts, sprayData, sprayIdx = 0;
+{
+  const posArr = new Float32Array(SPRAY_N*3).fill(-9999);
+  sprayData = [];
+  for (let i = 0; i < SPRAY_N; i++) sprayData.push({ life:0, vx:0, vy:0, vz:0 });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  sprayPts = new THREE.Points(g, new THREE.PointsMaterial({ color:0xffffff, size:0.5, transparent:true, opacity:0.75, sizeAttenuation:true, depthWrite:false }));
+  sprayPts.frustumCulled = false;
+  scene.add(sprayPts);
+}
+function spawnSpray(px, py, pz, vx, vy, vz) {
+  const i = sprayIdx; sprayIdx = (sprayIdx+1) % SPRAY_N;
+  const a = sprayPts.geometry.attributes.position;
+  a.setXYZ(i, px, py, pz);
+  const d = sprayData[i];
+  d.life = 0.55 + Math.random()*0.35;
+  d.vx = vx + (Math.random()-0.5)*3;
+  d.vy = vy + Math.random()*2.5;
+  d.vz = vz + (Math.random()-0.5)*3;
+}
+function updateSpray(dt) {
+  const a = sprayPts.geometry.attributes.position;
+  for (let i = 0; i < SPRAY_N; i++) {
+    const d = sprayData[i];
+    if (d.life <= 0) continue;
+    d.life -= dt;
+    if (d.life <= 0) { a.setY(i, -9999); continue; }
+    d.vy -= 14*dt;
+    a.setXYZ(i, a.getX(i)+d.vx*dt, a.getY(i)+d.vy*dt, a.getZ(i)+d.vz*dt);
+  }
+  a.needsUpdate = true;
+}
+
+/* ============================== サウンド（WebAudio：風＋カービング） ============================== */
+let audio = null;
+function initAudio() {
+  if (audio) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const len = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) ch[i] = Math.random()*2-1;
+    const mkNoise = () => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; return s; };
+
+    const windSrc = mkNoise();
+    const windF = ctx.createBiquadFilter(); windF.type = 'lowpass'; windF.frequency.value = 350;
+    const windG = ctx.createGain(); windG.gain.value = 0;
+    windSrc.connect(windF); windF.connect(windG); windG.connect(ctx.destination); windSrc.start();
+
+    const carveSrc = mkNoise();
+    const carveF = ctx.createBiquadFilter(); carveF.type = 'bandpass'; carveF.frequency.value = 900; carveF.Q.value = 0.8;
+    const carveG = ctx.createGain(); carveG.gain.value = 0;
+    carveSrc.connect(carveF); carveF.connect(carveG); carveG.connect(ctx.destination); carveSrc.start();
+
+    audio = { ctx, windG, windF, carveG };
+  } catch (e) { /* 音なしで続行 */ }
+}
+
+/* ============================== 入力 ============================== */
+const keys = {};
+addEventListener('keydown', e => {
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].indexOf(e.code) >= 0) e.preventDefault();
+  keys[e.code] = true;
+  if (e.code === 'KeyR' && state !== 'menu') resetRun();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+const inLeft  = () => keys['ArrowLeft'] || keys['KeyA'];
+const inRight = () => keys['ArrowRight'] || keys['KeyD'];
+const inUp    = () => keys['ArrowUp'] || keys['KeyW'];
+const inDown  = () => keys['ArrowDown'] || keys['KeyS'];
+const inJump  = () => keys['Space'];
+const inGrab  = () => keys['ShiftLeft'] || keys['ShiftRight'];
+
+/* ============================== ゲーム状態 ============================== */
+let state = 'menu';            // menu / play / crash
+const pos = new THREE.Vector3(0, 0, 5);
+const vel = new THREE.Vector3(0, 0, 8);
+let heading = 0;               // 0 = 真っ直ぐ下り(+z)
+let grounded = true;
+let spinOff = 0, spinDeg = 0, flipDeg = 0, grabTime = 0;
+let takeoffT = 0, airTime = 0;
+let charge = 0, charging = false, prevJump = false;
+let crashT = 0, crashSpinX = 0, crashSpinZ = 0;
+let score = 0, trickScore = 0, combo = 0, lastTrickT = -99;
+let shake = 0;
+let elapsed = 0;
+let hiscore = +(localStorage.getItem('powderrush_hi') || 0);
+
+const camPos = new THREE.Vector3(0, 6, -10);
+const camLook = new THREE.Vector3();
+const fwd = new THREE.Vector3(), latV = new THREE.Vector3(), upV = new THREE.Vector3(0,1,0);
+
+const ui = {
+  score: document.getElementById('score'),
+  hiscore: document.getElementById('hiscore'),
+  dist: document.getElementById('dist'),
+  speed: document.getElementById('speed'),
+  combo: document.getElementById('combo'),
+  trickwrap: document.getElementById('trickwrap'),
+  chargewrap: document.getElementById('chargewrap'),
+  chargebar: document.getElementById('chargebar'),
+  flash: document.getElementById('flash'),
+};
+ui.hiscore.textContent = 'BEST ' + Math.floor(hiscore);
+
+function showTrick(text, pts, bad) {
+  const d = document.createElement('div');
+  d.className = 'trick' + (bad ? ' bad' : '');
+  d.innerHTML = text + (pts > 0 ? '<span class="pts">+' + pts + '</span>' : '');
+  ui.trickwrap.appendChild(d);
+  setTimeout(() => d.remove(), 1700);
+}
+function foldDeg(a, period) {
+  let f = ((a % period) + period) % period;
+  if (f > period/2) f -= period;
+  return f;
+}
+const SPIN_PTS = { 180:100, 360:280, 540:520, 720:850, 900:1250, 1080:1800 };
+
+function resetRun() {
+  pos.set(0, heightAt(0, 5), 5);
+  vel.set(0, 0, 8);
+  heading = 0; spinOff = 0; spinDeg = 0; flipDeg = 0; grabTime = 0;
+  grounded = true; charge = 0; charging = false;
+  crashT = 0; score = 0; trickScore = 0; combo = 0; shake = 0;
+  tiltG.rotation.set(0,0,0);
+  state = 'play';
+  for (let i = 0; i < NUM_CHUNKS; i++) rebuildChunk(chunks[i], (i-1) * CHUNK_LEN);
+}
+
+function doCrash(label) {
+  state = 'crash';
+  crashT = 1.5;
+  combo = 0;
+  vel.multiplyScalar(0.25);
+  crashSpinX = (Math.random()-0.5) * 10;
+  crashSpinZ = (Math.random()-0.5) * 10;
+  shake = 1.0;
+  showTrick(label, 0, true);
+  ui.flash.style.opacity = 1;
+  setTimeout(() => ui.flash.style.opacity = 0, 250);
+  // 雪煙バースト
+  for (let i = 0; i < 50; i++)
+    spawnSpray(pos.x, pos.y+0.3, pos.z, (Math.random()-0.5)*8, Math.random()*7, (Math.random()-0.5)*8);
+}
+
+function landEval() {
+  const velYaw = Math.atan2(vel.x, vel.z);
+  const misDeg = foldDeg((heading + spinOff - velYaw) * 180/Math.PI, 180);
+  const flipMis = Math.abs(foldDeg(flipDeg, 360));
+
+  if (airTime > 0.35 && (Math.abs(misDeg) > 55 || flipMis > 75)) {
+    heading = velYaw; spinOff = 0; spinDeg = 0; flipDeg = 0; grabTime = 0;
+    doCrash('WIPEOUT!');
+    return;
+  }
+  let pts = 0;
+  const names = [];
+  const flips = Math.round(Math.abs(flipDeg)/360);
+  if (flips > 0) {
+    names.push((flipDeg < 0 ? 'BACKFLIP' : 'FRONTFLIP') + (flips > 1 ? ' x' + flips : ''));
+    pts += flips * 400;
+  }
+  const spins = Math.round(Math.abs(spinDeg)/180) * 180;
+  if (spins >= 180) {
+    names.push((spinDeg > 0 ? 'FS ' : 'BS ') + spins);
+    pts += SPIN_PTS[Math.min(spins, 1080)] || 1800;
+  }
+  if (grabTime > 0.3) { names.push('INDY GRAB'); pts += Math.round(grabTime * 150); }
+  if (names.length === 0 && airTime > 1.1) { names.push('BIG AIR'); pts += Math.round(airTime * 80); }
+
+  if (pts > 0) {
+    combo = Math.min(combo + 1, 9);
+    const total = pts * combo;
+    trickScore += total;
+    lastTrickT = elapsed;
+    showTrick(names.join(' + '), total, false);
+    shake = Math.min(shake + 0.25, 0.6);
+  }
+  heading = velYaw;
+  spinOff = 0; spinDeg = 0; flipDeg = 0; grabTime = 0;
+}
+
+/* ============================== メインループ ============================== */
+const clock = new THREE.Clock();
+
+function update(dt) {
+  elapsed += dt;
+  const turnIn = (inLeft() ? 1 : 0) - (inRight() ? 1 : 0);
+
+  if (state === 'crash') {
+    crashT -= dt;
+    vel.y -= 22 * dt;
+    pos.addScaledVector(vel, dt);
+    const gh = heightAt(pos.x, pos.z);
+    if (pos.y < gh) { pos.y = gh; vel.y = 0; vel.x *= 0.9; vel.z *= 0.9; }
+    tiltG.rotation.x += crashSpinX * dt;
+    tiltG.rotation.z += crashSpinZ * dt;
+    if (crashT <= 0) {
+      state = 'play';
+      tiltG.rotation.set(0,0,0);
+      heading = Math.atan2(vel.x, vel.z) || 0;
+      if (vel.lengthSq() < 9) { vel.set(Math.sin(heading), 0, Math.cos(heading)).multiplyScalar(4); }
+    }
+  } else if (state === 'play') {
+    const speed = vel.length();
+
+    if (grounded) {
+      // ターン（速度が上がるほど操作はマイルドに）
+      const turnRate = 2.6 / (1 + speed * 0.012);
+      heading += turnIn * turnRate * dt;
+      heading = foldDeg(heading * 180/Math.PI, 360) * Math.PI/180;
+
+      // 重力 → 斜面に投影（接線成分が自然に滑走加速になる）
+      vel.y -= 19.6 * dt;
+      const n = normalAt(pos.x, pos.z);
+      const vn = vel.dot(n);
+      if (vn < 0) vel.addScaledVector(n, -vn);
+
+      // ボード方向のグリップ（カービング）
+      fwd.set(Math.sin(heading), 0, Math.cos(heading));
+      fwd.addScaledVector(n, -fwd.dot(n)).normalize();
+      latV.crossVectors(n, fwd);
+      let vF = vel.dot(fwd);
+      let vL = vel.dot(latV);
+      const slip = Math.abs(vL);
+
+      const braking = inDown();
+      const grip = braking ? 9.5 : 5.5;
+      vL *= Math.exp(-grip * dt);
+      vF *= Math.exp(-(braking ? 0.55 : 0.045) * dt);
+      if (inUp() && !charging) vF += 6.5 * dt;            // タック
+      const vNorm = vel.dot(n);
+      vel.copy(fwd).multiplyScalar(vF).addScaledVector(latV, vL).addScaledVector(n, vNorm);
+
+      // 速度上限
+      const sp2 = vel.length();
+      const cap = inUp() ? 56 : 47;
+      if (sp2 > cap) vel.multiplyScalar(cap / sp2);
+
+      // ジャンプチャージ
+      if (inJump()) { charging = true; charge = Math.min(charge + dt, 0.9); }
+      if (!inJump() && prevJump && charging) {
+        const power = 6.0 + charge * 6.5;
+        vel.y += power;
+        vel.addScaledVector(n, power * 0.25);
+        grounded = false;
+        takeoffT = elapsed;
+        charging = false; charge = 0;
+        for (let i = 0; i < 14; i++)
+          spawnSpray(pos.x, pos.y+0.1, pos.z, (Math.random()-0.5)*4, 3+Math.random()*3, (Math.random()-0.5)*4);
+      }
+
+      // 雪煙：カーブの横すべり量に応じて
+      const sprayAmt = slip * speed * 0.010 + (braking ? speed*0.05 : 0);
+      let nSpray = Math.min(8, Math.floor(sprayAmt * dt * 60));
+      for (let i = 0; i < nSpray; i++) {
+        spawnSpray(
+          pos.x - Math.sin(heading)*0.7 + (Math.random()-0.5)*0.6,
+          pos.y + 0.15,
+          pos.z - Math.cos(heading)*0.7 + (Math.random()-0.5)*0.6,
+          -vel.x*0.12 + latV.x * vL * -0.4, 1.5, -vel.z*0.12 + latV.z * vL * -0.4
+        );
+      }
+    } else {
+      // 空中：トリック
+      vel.y -= 19.6 * dt;
+      const spinRate = 5.6;
+      spinOff += turnIn * spinRate * dt;
+      spinDeg += turnIn * spinRate * dt * 180/Math.PI;
+      const flipIn = (inDown() ? -1 : 0) + (inUp() ? 1 : 0);
+      flipDeg += flipIn * 360 * dt;
+      if (inGrab()) grabTime += dt;
+      charging = false; charge = 0;
+    }
+    prevJump = inJump();
+
+    // 位置の積分と接地判定
+    pos.addScaledVector(vel, dt);
+    const gh = heightAt(pos.x, pos.z);
+    if (pos.y <= gh + 0.001) {
+      pos.y = gh;
+      if (!grounded) {
+        airTime = elapsed - takeoffT;
+        grounded = true;
+        const impact = Math.min(1, airTime * 0.5);
+        shake = Math.max(shake, impact * 0.5);
+        for (let i = 0; i < Math.floor(10 + impact*25); i++)
+          spawnSpray(pos.x, pos.y+0.1, pos.z, (Math.random()-0.5)*6, 1+Math.random()*4, (Math.random()-0.5)*6);
+        landEval();
+      }
+      const n = normalAt(pos.x, pos.z);
+      const vn = vel.dot(n);
+      if (vn < 0) vel.addScaledVector(n, -vn);
+    } else if (pos.y > gh + 0.25) {
+      if (grounded) { grounded = false; takeoffT = elapsed; }
+    }
+
+    // 障害物との衝突
+    for (const ch of chunks) {
+      if (pos.z < ch.z0 - 5 || pos.z > ch.z0 + CHUNK_LEN + 5) continue;
+      for (const c of ch.colliders) {
+        const dx = pos.x - c.x, dz = pos.z - c.z;
+        if (dx*dx + dz*dz < (c.r + 0.55) * (c.r + 0.55) && pos.y < heightAt(c.x, c.z) + 3.5) {
+          doCrash('CRASH!');
+          vel.x = -dx < 0 ? Math.abs(vel.x) : -Math.abs(vel.x);
+          break;
+        }
+      }
+      if (state === 'crash') break;
+    }
+
+    // コンボのタイムアウト
+    if (combo > 0 && grounded && elapsed - lastTrickT > 7) combo = 0;
+  }
+
+  // チャンクのリサイクル
+  let maxZ0 = -Infinity;
+  for (const ch of chunks) maxZ0 = Math.max(maxZ0, ch.z0);
+  for (const ch of chunks) {
+    if (pos.z - (ch.z0 + CHUNK_LEN) > CHUNK_LEN * 1.5) {
+      rebuildChunk(ch, maxZ0 + CHUNK_LEN);
+      maxZ0 += CHUNK_LEN;
+    }
+  }
+
+  /* ---------- ビジュアル更新 ---------- */
+  player.position.copy(pos);
+  player.rotation.y = heading + spinOff;
+
+  if (state === 'play') {
+    // 斜面に沿った前後傾き
+    fwd.set(Math.sin(heading), 0, Math.cos(heading));
+    const slopePitch = grounded ? Math.atan2(-(heightAt(pos.x + fwd.x, pos.z + fwd.z) - pos.y), 1) : 0;
+    const targetPitch = grounded ? slopePitch * 0.6 : flipDeg * Math.PI/180;
+    const turnInNow = (inLeft()?1:0) - (inRight()?1:0);
+    const targetRoll = grounded ? turnInNow * Math.min(0.5, vel.length()*0.012) : 0;
+    const k = grounded ? 1 - Math.exp(-10*dt) : 1;
+    tiltG.rotation.x += (targetPitch - tiltG.rotation.x) * k;
+    tiltG.rotation.z += (targetRoll - tiltG.rotation.z) * k;
+    if (!grounded) tiltG.rotation.x = flipDeg * Math.PI/180;
+    // しゃがみ
+    const crouch = charging ? 1 - charge*0.35 : (inGrab() && !grounded ? 0.8 : 1);
+    rider.scale.y += (crouch - rider.scale.y) * (1 - Math.exp(-12*dt));
+  }
+
+  // カメラ
+  {
+    const sp = vel.length();
+    const dirYaw = (state === 'play' && sp > 2) ? Math.atan2(vel.x, vel.z) : heading;
+    const back = 9.5 + sp * 0.06;
+    const tx = pos.x - Math.sin(dirYaw) * back;
+    const tz = pos.z - Math.cos(dirYaw) * back;
+    const ty = pos.y + 3.6 + sp * 0.02;
+    const ck = 1 - Math.exp(-5.5 * dt);
+    camPos.x += (tx - camPos.x) * ck;
+    camPos.y += (ty - camPos.y) * ck;
+    camPos.z += (tz - camPos.z) * ck;
+    const minY = heightAt(camPos.x, camPos.z) + 1.4;
+    if (camPos.y < minY) camPos.y = minY;
+    camera.position.copy(camPos);
+    if (shake > 0.01) {
+      camera.position.x += (Math.random()-0.5) * shake * 0.5;
+      camera.position.y += (Math.random()-0.5) * shake * 0.5;
+      shake *= Math.exp(-4*dt);
+    }
+    camLook.set(pos.x + Math.sin(dirYaw)*6, pos.y + 1.2, pos.z + Math.cos(dirYaw)*6);
+    camera.lookAt(camLook);
+    const targetFov = 70 + sp * 0.45;
+    camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-4*dt));
+    camera.updateProjectionMatrix();
+  }
+
+  // 太陽・遠景・降雪をプレイヤーに追従
+  sun.position.set(pos.x + 45, pos.y + 150, pos.z - 95);
+  sun.target.position.copy(pos);
+  backdrop.position.set(pos.x, -pos.z * SLOPE * 0.92, pos.z);
+
+  {
+    const a = snowPts.geometry.attributes.position;
+    for (let i = 0; i < SNOW_N; i++) {
+      let y = a.getY(i) - snowVel[i] * dt;
+      let x = a.getX(i), z = a.getZ(i);
+      if (y < camPos.y - 25) { y += 60; x = camPos.x + (Math.random()-0.5)*140; z = camPos.z + (Math.random()-0.5)*140; }
+      if (x < camPos.x - 70) x += 140; else if (x > camPos.x + 70) x -= 140;
+      if (z < camPos.z - 70) z += 140; else if (z > camPos.z + 70) z -= 140;
+      a.setXYZ(i, x, y, z);
+    }
+    a.needsUpdate = true;
+  }
+  updateSpray(dt);
+
+  // サウンド
+  if (audio) {
+    const sp = vel.length();
+    audio.windG.gain.value = Math.min(0.16, sp * 0.0035);
+    audio.windF.frequency.value = 250 + sp * 26;
+    const carveAmt = (state === 'play' && grounded) ? Math.min(0.10, sp * 0.0018 * (Math.abs((inLeft()?1:0)-(inRight()?1:0)) + (inDown()?1.5:0.3))) : 0;
+    audio.carveG.gain.value += (carveAmt - audio.carveG.gain.value) * 0.1;
+  }
+
+  /* ---------- HUD ---------- */
+  score = trickScore + Math.floor(Math.max(0, pos.z) * 2);
+  ui.score.textContent = score;
+  ui.dist.textContent = Math.floor(Math.max(0, pos.z)) + ' m';
+  ui.speed.textContent = Math.floor(vel.length() * 3.6);
+  if (score > hiscore) { hiscore = score; localStorage.setItem('powderrush_hi', hiscore); }
+  ui.hiscore.textContent = 'BEST ' + Math.floor(hiscore);
+  if (combo >= 2) { ui.combo.textContent = 'COMBO x' + combo; ui.combo.classList.add('on'); }
+  else ui.combo.classList.remove('on');
+  if (charging) { ui.chargewrap.classList.add('on'); ui.chargebar.style.width = (charge/0.9*100) + '%'; }
+  else ui.chargewrap.classList.remove('on');
+}
+
+let lastFrameT = performance.now();
+function tick() {
+  lastFrameT = performance.now();
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (state !== 'menu') update(dt);
+  else {
+    // メニュー中はゆっくり旋回するデモカメラ
+    const t = performance.now() * 0.0002;
+    camera.position.set(Math.sin(t)*22, heightAt(0,5)+9, 5 + Math.cos(t)*22);
+    camera.lookAt(0, heightAt(0,5)+1, 5);
+  }
+  renderer.render(scene, camera);
+}
+renderer.setAnimationLoop(tick);
+// 埋め込みWebView等でrequestAnimationFrameが止まる環境向けのフォールバック
+setInterval(() => { if (performance.now() - lastFrameT > 90) tick(); }, 33);
+
+// 初期配置
+pos.y = heightAt(pos.x, pos.z);
+player.position.copy(pos);
+
+function startGame() {
+  initAudio();
+  document.getElementById('start').style.display = 'none';
+  resetRun();
+}
+document.getElementById('startbtn').addEventListener('click', e => { e.stopPropagation(); startGame(); });
+document.getElementById('start').addEventListener('click', startGame);
+addEventListener('keydown', e => {
+  if (state === 'menu' && (e.code === 'Space' || e.code === 'Enter')) startGame();
+});
+</script>
+</body>
+</html>
