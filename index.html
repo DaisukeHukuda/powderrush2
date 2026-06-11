@@ -332,12 +332,12 @@ function rebuildChunk(ch, z0) {
       ch.trees.setMatrixAt(nt, _m4);
       ch.trunks.setMatrixAt(nt, _m4);
       ch.caps.setMatrixAt(nt, _m4);
-      ch.colliders.push({ x, z, r: 1.15*sc });
+      ch.colliders.push({ x, z, r: 0.85*sc });
       nt++;
     } else if (nr < MAX_ROCK) {
       _m4.compose(_p.set(x, y+0.15*sc, z), _q, _s.set(sc*1.2, sc*0.85, sc*1.2));
       ch.rocks.setMatrixAt(nr, _m4);
-      ch.colliders.push({ x, z, r: 1.45*sc });
+      ch.colliders.push({ x, z, r: 1.05*sc });
       nr++;
     }
   }
@@ -421,52 +421,136 @@ player.add(tiltG); tiltG.add(rider);
 scene.add(player);
 
 {
-  const boardMat = new THREE.MeshStandardMaterial({ color:0xff4d2e, roughness:0.35, metalness:0.15 });
-  const boardMesh = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 1.66), boardMat);
-  boardMesh.position.y = 0.06;
+  /* --- ボード --- */
+  const boardTopM = new THREE.MeshStandardMaterial({ color:0xff4d2e, roughness:0.3, metalness:0.2 });
+  const boardLineM = new THREE.MeshStandardMaterial({ color:0xfff4e8, roughness:0.35 });
+  const bindingM = new THREE.MeshStandardMaterial({ color:0x16181d, roughness:0.6 });
+
+  const boardMesh = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 1.66), boardTopM);
+  boardMesh.position.y = 0.05;
   boardMesh.castShadow = true;
   tiltG.add(boardMesh);
+  // デッキのグラフィック（白ストライプ＋アクセント）
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.012, 1.10), boardLineM);
+  stripe.position.set(0, 0.08, 0); tiltG.add(stripe);
+  const accent = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.013, 0.18),
+    new THREE.MeshStandardMaterial({ color:0x21d3e8, roughness:0.35 }));
+  accent.position.set(0, 0.082, 0.45); tiltG.add(accent);
+  const accent2 = accent.clone(); accent2.position.z = -0.45; tiltG.add(accent2);
   // ノーズ・テールのキック
-  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 0.22), boardMat);
-  tip.position.set(0, 0.11, 0.9); tip.rotation.x = -0.5; tiltG.add(tip);
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 0.22), boardMat);
-  tail.position.set(0, 0.11, -0.9); tail.rotation.x = 0.5; tiltG.add(tail);
+  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.24), boardTopM);
+  tip.position.set(0, 0.10, 0.9); tip.rotation.x = -0.5; tiltG.add(tip);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.24), boardTopM);
+  tail.position.set(0, 0.10, -0.9); tail.rotation.x = 0.5; tiltG.add(tail);
+  // ビンディング（ベースプレート＋ハイバック）
+  for (const bz of [0.34, -0.34]) {
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.035, 0.26), bindingM);
+    base.position.set(0, 0.085, bz); base.rotation.y = 0.30; tiltG.add(base);
+    const hb = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.16, 0.03), bindingM);
+    hb.position.set(bz > 0 ? -0.10 : -0.10, 0.16, bz - 0.10);
+    hb.rotation.set(-0.35, 0.30, 0); tiltG.add(hb);
+  }
 
-  const jacket = new THREE.MeshStandardMaterial({ color:0x1f6fe0, roughness:0.7 });
-  const pants = new THREE.MeshStandardMaterial({ color:0x23272e, roughness:0.8 });
-  const skin = new THREE.MeshStandardMaterial({ color:0xe8b08a, roughness:0.7 });
-  const helmetM = new THREE.MeshStandardMaterial({ color:0xf2f4f8, roughness:0.3 });
-  const goggleM = new THREE.MeshStandardMaterial({ color:0x10131a, roughness:0.15, metalness:0.6 });
+  /* --- ウェア素材 --- */
+  const jacket  = new THREE.MeshStandardMaterial({ color:0x1f6fe0, roughness:0.65 });
+  const jacketD = new THREE.MeshStandardMaterial({ color:0x174f9e, roughness:0.7 });   // 袖・フード
+  const pants   = new THREE.MeshStandardMaterial({ color:0x23272e, roughness:0.8 });
+  const bootM   = new THREE.MeshStandardMaterial({ color:0x101216, roughness:0.5 });
+  const skin    = new THREE.MeshStandardMaterial({ color:0xe8b08a, roughness:0.7 });
+  const helmetM = new THREE.MeshStandardMaterial({ color:0xf2f4f8, roughness:0.25, metalness:0.1 });
+  const lensM   = new THREE.MeshStandardMaterial({ color:0x21d3e8, roughness:0.1, metalness:0.7, emissive:0x0a5560 });
+  const strapM  = new THREE.MeshStandardMaterial({ color:0x16181d, roughness:0.5 });
+  const gloveM  = new THREE.MeshStandardMaterial({ color:0x16181d, roughness:0.7 });
+  const packM   = new THREE.MeshStandardMaterial({ color:0xff8a3d, roughness:0.7 });
 
-  // サイドスタンス気味に
+  // サイドスタンス（体はやや横向き）
   rider.rotation.y = 0.45;
-  const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.42, 4, 8), pants);
-  legL.position.set(-0.02, 0.42, 0.30); legL.rotation.x = 0.18; legL.rotation.z = 0.1;
-  const legR = legL.clone(); legR.position.set(0.02, 0.42, -0.30); legR.rotation.x = -0.18; legR.rotation.z = -0.1;
-  rider.add(legL, legR);
-  const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.32), pants);
-  bootL.position.set(0, 0.12, 0.32); rider.add(bootL);
-  const bootR = bootL.clone(); bootR.position.set(0, 0.12, -0.32); rider.add(bootR);
 
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.34, 4, 10), jacket);
-  torso.position.set(0, 0.92, 0); torso.rotation.x = 0.12;
+  /* --- ブーツ --- */
+  for (const bz of [0.34, -0.34]) {
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.15, 0.30), bootM);
+    boot.position.set(0, 0.14, bz); boot.rotation.y = 0.30; rider.add(boot);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.095, 0.10, 8), bootM);
+    cuff.position.set(0, 0.24, bz); rider.add(cuff);
+  }
+
+  /* --- 脚（膝を曲げた2節構造） --- */
+  // 前脚（z+側）：太もも前傾、すね後傾
+  const thighF = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.26, 4, 8), pants);
+  thighF.position.set(-0.01, 0.60, 0.24); thighF.rotation.x = 0.55; thighF.castShadow = true;
+  const shinF = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.24, 4, 8), pants);
+  shinF.position.set(0, 0.36, 0.36); shinF.rotation.x = -0.30;
+  rider.add(thighF, shinF);
+  // 後脚（z-側）
+  const thighB = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.26, 4, 8), pants);
+  thighB.position.set(0.01, 0.60, -0.22); thighB.rotation.x = -0.55; thighB.castShadow = true;
+  const shinB = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.24, 4, 8), pants);
+  shinB.position.set(0, 0.36, -0.35); shinB.rotation.x = 0.30;
+  rider.add(thighB, shinB);
+  // 膝パッド
+  const kneeF = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), pants);
+  kneeF.position.set(0, 0.48, 0.33); rider.add(kneeF);
+  const kneeB = kneeF.clone(); kneeB.position.set(0, 0.48, -0.32); rider.add(kneeB);
+
+  /* --- 腰・胴体 --- */
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.16, 0.24), pants);
+  hips.position.set(0, 0.74, 0.01); rider.add(hips);
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.045, 0.25), strapM);
+  belt.position.set(0, 0.83, 0.01); rider.add(belt);
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.165, 0.30, 4, 10), jacket);
+  torso.position.set(0, 1.03, 0.02); torso.rotation.x = 0.18;
   torso.castShadow = true;
   rider.add(torso);
+  // ジッパーライン＋胸ポケット
+  const zipper = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.30, 0.012), boardLineM);
+  zipper.position.set(0, 1.04, 0.175); zipper.rotation.x = 0.18; rider.add(zipper);
+  const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.06, 0.012), jacketD);
+  pocket.position.set(-0.09, 1.10, 0.165); pocket.rotation.x = 0.18; rider.add(pocket);
+  // フード（首の後ろ）
+  const hood = new THREE.Mesh(new THREE.SphereGeometry(0.105, 10, 8), jacketD);
+  hood.position.set(0, 1.24, -0.10); hood.scale.set(1.15, 0.7, 0.85); rider.add(hood);
+  // バックパック
+  const pack = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.30, 0.10), packM);
+  pack.position.set(0, 1.04, -0.17); pack.rotation.x = 0.18; pack.castShadow = true; rider.add(pack);
+  const packPocket = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.04), strapM);
+  packPocket.position.set(0, 0.96, -0.225); packPocket.rotation.x = 0.18; rider.add(packPocket);
 
-  const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.36, 4, 8), jacket);
-  armL.position.set(-0.24, 0.95, 0.05); armL.rotation.z = 0.9; armL.rotation.x = 0.2;
-  const armR = armL.clone(); armR.position.set(0.24, 0.95, -0.05); armR.rotation.z = -0.9; armR.rotation.x = -0.2;
-  rider.add(armL, armR);
+  /* --- 腕（上腕＋前腕＋グローブの2節構造） --- */
+  // 左腕：横に広げてバランス
+  const uArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.20, 4, 8), jacketD);
+  uArmL.position.set(-0.26, 1.13, 0.03); uArmL.rotation.z = 1.05; uArmL.rotation.x = 0.1; rider.add(uArmL);
+  const fArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.048, 0.18, 4, 8), jacketD);
+  fArmL.position.set(-0.44, 1.05, 0.10); fArmL.rotation.z = 1.35; fArmL.rotation.x = -0.3; rider.add(fArmL);
+  const gloveL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), gloveM);
+  gloveL.position.set(-0.55, 1.01, 0.14); rider.add(gloveL);
+  // 右腕：やや後ろ下がり
+  const uArmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.20, 4, 8), jacketD);
+  uArmR.position.set(0.26, 1.10, -0.04); uArmR.rotation.z = -1.0; uArmR.rotation.x = -0.15; rider.add(uArmR);
+  const fArmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.048, 0.18, 4, 8), jacketD);
+  fArmR.position.set(0.43, 0.99, -0.12); fArmR.rotation.z = -1.3; fArmR.rotation.x = 0.25; rider.add(fArmR);
+  const gloveR = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), gloveM);
+  gloveR.position.set(0.53, 0.94, -0.16); rider.add(gloveR);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.135, 12, 10), helmetM);
-  head.position.set(0, 1.32, 0);
+  /* --- 頭部（ヘルメット＋ゴーグル＋ストラップ） --- */
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.08, 8), skin);
+  neck.position.set(0, 1.28, 0.02); rider.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 12), helmetM);
+  head.position.set(0, 1.41, 0.04);
   head.castShadow = true;
   rider.add(head);
-  const goggle = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.07, 0.12), goggleM);
-  goggle.position.set(0, 1.33, 0.09);
-  rider.add(goggle);
-  const chin = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), skin);
-  chin.position.set(0, 1.24, 0.06); rider.add(chin);
+  // ヘルメットのつば
+  const brim = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.025, 0.08), helmetM);
+  brim.position.set(0, 1.46, 0.16); brim.rotation.x = 0.15; rider.add(brim);
+  // ゴーグル（レンズ＋ストラップ）
+  const lens = new THREE.Mesh(new THREE.BoxGeometry(0.235, 0.095, 0.06), lensM);
+  lens.position.set(0, 1.42, 0.145); rider.add(lens);
+  const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.143, 0.143, 0.05, 14, 1, true), strapM);
+  strap.position.set(0, 1.42, 0.04);
+  rider.add(strap);
+  // 顔（あご周り）
+  const face = new THREE.Mesh(new THREE.SphereGeometry(0.095, 10, 8), skin);
+  face.position.set(0, 1.34, 0.09); face.scale.set(1, 0.8, 0.9); rider.add(face);
 }
 
 /* ============================== パーティクル ============================== */
@@ -575,6 +659,7 @@ let spinOff = 0, spinDeg = 0, flipDeg = 0, grabTime = 0;
 let takeoffT = 0, airTime = 0;
 let charge = 0, charging = false, prevJump = false;
 let crashT = 0, crashSpinX = 0, crashSpinZ = 0;
+let hitCooldown = 0;           // 衝突直後の無敵時間（連続クラッシュ防止）
 let score = 0, trickScore = 0, combo = 0, lastTrickT = -99;
 let shake = 0;
 let elapsed = 0;
@@ -624,9 +709,10 @@ function resetRun() {
 
 function doCrash(label) {
   state = 'crash';
-  crashT = 1.5;
+  crashT = 1.1;
   combo = 0;
-  vel.multiplyScalar(0.25);
+  hitCooldown = 2.0;
+  vel.multiplyScalar(0.5);
   crashSpinX = (Math.random()-0.5) * 10;
   crashSpinZ = (Math.random()-0.5) * 10;
   shake = 1.0;
@@ -643,9 +729,17 @@ function landEval() {
   const misDeg = foldDeg((heading + spinOff - velYaw) * 180/Math.PI, 180);
   const flipMis = Math.abs(foldDeg(flipDeg, 360));
 
-  if (airTime > 0.35 && (Math.abs(misDeg) > 55 || flipMis > 75)) {
+  // 大きくズレた着地のみ転倒、中程度のズレは「よろけ」（減速のみ）で耐える
+  if (airTime > 0.35 && (Math.abs(misDeg) > 80 || flipMis > 110)) {
     heading = velYaw; spinOff = 0; spinDeg = 0; flipDeg = 0; grabTime = 0;
     doCrash('WIPEOUT!');
+    return;
+  }
+  if (airTime > 0.35 && (Math.abs(misDeg) > 50 || flipMis > 65)) {
+    heading = velYaw; spinOff = 0; spinDeg = 0; flipDeg = 0; grabTime = 0;
+    vel.multiplyScalar(0.6);
+    shake = Math.max(shake, 0.5);
+    showTrick('SKETCHY!', 0, true);
     return;
   }
   let pts = 0;
@@ -680,6 +774,7 @@ const clock = new THREE.Clock();
 
 function update(dt) {
   elapsed += dt;
+  if (hitCooldown > 0) hitCooldown -= dt;
   const turnIn = (inLeft() ? 1 : 0) - (inRight() ? 1 : 0);
 
   if (state === 'crash') {
@@ -790,18 +885,36 @@ function update(dt) {
       if (grounded) { grounded = false; takeoffT = elapsed; }
     }
 
-    // 障害物との衝突
-    for (const ch of chunks) {
-      if (pos.z < ch.z0 - 5 || pos.z > ch.z0 + CHUNK_LEN + 5) continue;
-      for (const c of ch.colliders) {
-        const dx = pos.x - c.x, dz = pos.z - c.z;
-        if (dx*dx + dz*dz < (c.r + 0.55) * (c.r + 0.55) && pos.y < heightAt(c.x, c.z) + 3.5) {
-          doCrash('CRASH!');
-          vel.x = -dx < 0 ? Math.abs(vel.x) : -Math.abs(vel.x);
-          break;
+    // 障害物との衝突：かすめた場合は弾かれて減速するだけ、高速の正面衝突のみ転倒
+    if (hitCooldown <= 0) {
+      outer:
+      for (const ch of chunks) {
+        if (pos.z < ch.z0 - 5 || pos.z > ch.z0 + CHUNK_LEN + 5) continue;
+        for (const c of ch.colliders) {
+          const dx = pos.x - c.x, dz = pos.z - c.z;
+          const rr = c.r + 0.45;
+          const d2 = dx*dx + dz*dz;
+          if (d2 >= rr*rr || pos.y > heightAt(c.x, c.z) + 3.0) continue;
+          const d = Math.sqrt(d2) || 0.001;
+          const nx = dx/d, nz = dz/d;                    // 障害物→プレイヤー方向
+          const sp = vel.length();
+          const into = -(vel.x*nx + vel.z*nz);           // 中心へ向かう速度成分
+          if (sp > 22 && into > sp * 0.75) {
+            doCrash('CRASH!');
+          } else {
+            // グランシングヒット：押し出し＋減速＋ひるみ
+            pos.x = c.x + nx * rr; pos.z = c.z + nz * rr;
+            const bounce = Math.max(into, 0) * 1.4 + 3;
+            vel.x += nx * bounce; vel.z += nz * bounce;
+            vel.multiplyScalar(0.7);
+            shake = Math.max(shake, 0.5);
+            hitCooldown = 1.2;
+            for (let i = 0; i < 16; i++)
+              spawnSpray(pos.x, pos.y+0.3, pos.z, nx*3+(Math.random()-0.5)*4, 2+Math.random()*3, nz*3+(Math.random()-0.5)*4);
+          }
+          break outer;
         }
       }
-      if (state === 'crash') break;
     }
 
     // コンボのタイムアウト
